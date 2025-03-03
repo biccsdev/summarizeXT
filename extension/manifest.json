@@ -3,7 +3,7 @@
     "name": "summarizext",
     "version": "0.1.0",
     "description": "Summarizes blogs/articles content and provides insights",
-    "permissions": ["activeTab", "scripting", "http://localhost:3000/*", "tabs", "storage"],
+    "permissions": ["activeTab", "scripting", "http://localhost:3000/*", "tabs", "storage", "background"],
     "action": {
       "default_popup": "popup/index.html",
       "default_icon": {

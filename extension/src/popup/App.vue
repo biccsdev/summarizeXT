@@ -7,15 +7,13 @@
       @click="fetchSummary" 
       :disabled="loading"
     >
-      {{ summary && !loading && !error ? 'Summarize Again' : 'Summarize Active Website' }}
+      {{ summary && !loading && !error ? 'Summarize Again' : 'Summarize Current Website' }}
     </button>
-
     <div class="content-wrapper">
       <div v-if="loading" class="loading-container">
         <div class="cyber-spinner"></div>
         <p class="loading-text">Processing Data Stream...</p>
       </div>
-
       <div v-else-if="summary && !error" class="result-container">
         <div class="summary-section">
           <h3 class="section-title">Summary</h3>
@@ -54,72 +52,46 @@
 export default {
   data() {
     return {
-      summary: '',
+      summary: false,
       insights: [],
       loading: false,
       error: false,
       currentUrl: '',
     };
   },
-  async mounted() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    this.currentUrl = tab.url;
-
-    chrome.storage.local.get([this.currentUrl], (result) => {
-      const cachedData = result[this.currentUrl];
-      if (cachedData) {
-        this.summary = cachedData.summary;
-        this.insights = cachedData.insights;
+  mounted() {
+    this.loadTabState();
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.action === 'stateUpdate') {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (message.tabId === tabs[0].id) {
+            this.summary = message.state.summary;
+            this.insights = message.state.insights;
+            this.loading = message.state.loading;
+          }
+        });
       }
     });
   },
   methods: {
     async fetchSummary() {
-      this.loading = true;
-      this.error = false;
-
-      try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const newUrl = tab.url;
-
-        if (newUrl !== this.currentUrl) {
-          this.summary = '';
-          this.insights = [];
-          this.currentUrl = newUrl;
-        }
-
-        const response = await chrome.runtime.sendMessage({ action: 'getText' });
-        const text = response?.text || "this is a sample test to pass to the backend and summarize";
-
-        const result = await fetch('http://localhost:3000/summarize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text }),
-        }).then((res) => res.json());
-
-        const parsedResult = JSON.parse(result.summary);
-        console.log("parsedResult", parsedResult)
-        this.summary = parsedResult.summary;
-        
-        const insightsArray = parsedResult.insights
-          .split(/\[\d+\]/)
-          .map(insight => insight.trim())
-          .filter(insight => insight.length > 0);
-        this.insights = insightsArray;
-
-        const dataToStore = {
-          [this.currentUrl]: {
-            summary: this.summary,
-            insights: this.insights,
-          },
-        };
-        chrome.storage.local.set(dataToStore);
-      } catch (err) {
-        console.error('Summary fetch failed:', err);
-        this.error = true;
-      } finally {
-        this.loading = false;
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'startSummary' }, resolve);
+      });
+      if (response && response.alreadySummarized) {
+        this.loadTabState(); // Load existing summary immediately
       }
+    },
+    loadTabState() {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tabId = tabs[0].id;
+        chrome.storage.local.get(tabId.toString(), (result) => {
+          const state = result[tabId] || { summary: false, insights: [], loading: false };
+          this.summary = state.summary;
+          this.insights = state.insights;
+          this.loading = state.loading;
+        });
+      });
     },
   },
 };
